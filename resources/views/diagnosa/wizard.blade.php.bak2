@@ -1,0 +1,234 @@
+@extends('layouts.app')
+@section('title', 'Konsultasi ' . $komponen->nama)
+
+@section('content')
+    @if (session('error'))
+        <div class="bg-red-500/10 text-red-400 p-3 rounded-lg mb-4 text-sm">{{ session('error') }}</div>
+    @endif
+
+    @if ($gejalas->isEmpty())
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-2xl">
+            <p class="text-zinc-300">Komponen ini belum punya data gejala.</p>
+            <a href="{{ route('diagnosa.index') }}" class="inline-block mt-4 text-violet-400 hover:underline">← Pilih komponen lain</a>
+        </div>
+    @else
+        <form action="{{ route('diagnosa.proses') }}" method="POST" class="max-w-2xl"
+              x-data="wizard(@js($gejalas->pluck('id')->values()), @js($gejalas->pluck('nama', 'id')))"
+              x-on:keydown.window="tekan($event)">
+            @csrf
+            <input type="hidden" name="komponen_id" value="{{ $komponen->id }}">
+            {{-- Analisis foto kerusakan --}}
+            <div class="mb-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-5"
+                 x-data="{
+                    url: '{{ route('diagnosa.kamera', $komponen) }}',
+                    token: '{{ csrf_token() }}',
+                    loading: false,
+                    error: '',
+                    hasil: null,
+                    async kirim(ev, jawab) {
+                        const file = ev.target.files[0];
+                        if (!file) return;
+                        this.loading = true; this.error = ''; this.hasil = null;
+                        const fd = new FormData();
+                        fd.append('foto', file);
+                        try {
+                            const res = await fetch(this.url, {
+                                method: 'POST',
+                                headers: { 'X-CSRF-TOKEN': this.token, 'Accept': 'application/json' },
+                                body: fd
+                            });
+                            const data = await res.json();
+                            if (!res.ok) {
+                                this.error = data.detail || data.pesan || data.message || 'Gagal menganalisis foto.';
+                                return;
+                            }
+                            data.gejala_id.forEach(id => { jawab[id] = 'ya'; });
+                            this.hasil = data;
+                        } catch (e) {
+                            this.error = 'Koneksi gagal, coba lagi.';
+                        } finally {
+                            this.loading = false;
+                            ev.target.value = '';
+                        }
+                    }
+                 }">
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="mr-auto">
+                        <p class="text-white font-medium">Analisis dari foto</p>
+                        <p class="text-xs text-zinc-500">Opsional. Foto komponen yang rusak, gejala yang terlihat akan terisi otomatis.</p>
+                    </div>
+                    <input type="file" accept="image/*" capture="environment" class="hidden" x-ref="kamera" @change="kirim($event, jawab)">
+                    <input type="file" accept="image/*" class="hidden" x-ref="galeri" @change="kirim($event, jawab)">
+                    <button type="button" @click="$refs.kamera.click()" :disabled="loading"
+                            class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm disabled:opacity-50">Ambil foto</button>
+                    <button type="button" @click="$refs.galeri.click()" :disabled="loading"
+                            class="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800 text-sm disabled:opacity-50">Pilih file</button>
+                </div>
+
+                <p x-show="loading" x-cloak class="mt-4 text-sm text-zinc-400">Menganalisis foto, tunggu sebentar...</p>
+                <p x-show="error" x-cloak x-text="error" class="mt-4 text-sm text-red-400"></p>
+
+                <template x-if="hasil">
+                    <div class="mt-5 space-y-4 border-t border-zinc-800 pt-5">
+                        <img :src="hasil.foto_url" alt="Bukti kerusakan" class="w-full max-h-72 object-contain rounded-xl bg-black">
+
+                        <div>
+                            <span class="inline-block px-3 py-1 rounded-full text-sm font-medium"
+                                  :class="{
+                                    'bg-green-500/15 text-green-400': hasil.kondisi === 'bisa_diperbaiki',
+                                    'bg-red-500/15 text-red-400': hasil.kondisi === 'sebaiknya_diganti',
+                                    'bg-zinc-700/50 text-zinc-300': hasil.kondisi === 'tidak_pasti'
+                                  }"
+                                  x-text="hasil.kondisi === 'bisa_diperbaiki' ? 'Masih bisa diperbaiki' : (hasil.kondisi === 'sebaiknya_diganti' ? 'Sebaiknya diganti' : 'Belum bisa dipastikan')"></span>
+                            <span class="ml-2 text-xs text-zinc-500">keyakinan AI: <span x-text="hasil.tingkat_keyakinan"></span></span>
+                        </div>
+
+                        <div x-show="hasil.bukti.length">
+                            <p class="text-sm font-medium text-white mb-1">Bukti kerusakan di foto</p>
+                            <ul class="list-disc pl-5 text-sm text-zinc-300 space-y-1">
+                                <template x-for="b in hasil.bukti"><li x-text="b"></li></template>
+                            </ul>
+                        </div>
+
+                        <div x-show="hasil.kondisi === 'bisa_diperbaiki' && hasil.langkah_perbaikan.length">
+                            <p class="text-sm font-medium text-white mb-1">Yang perlu diperbaiki</p>
+                            <ol class="list-decimal pl-5 text-sm text-zinc-300 space-y-1">
+                                <template x-for="l in hasil.langkah_perbaikan"><li x-text="l"></li></template>
+                            </ol>
+                        </div>
+
+                        <div x-show="hasil.kondisi === 'sebaiknya_diganti'" class="bg-red-500/10 rounded-xl p-3">
+                            <p class="text-sm font-medium text-red-400 mb-1">Rekomendasi: beli komponen baru</p>
+                            <p class="text-sm text-zinc-300" x-text="hasil.rekomendasi"></p>
+                        </div>
+
+                        <p x-show="hasil.kondisi !== 'sebaiknya_diganti' && hasil.rekomendasi" class="text-sm text-zinc-300" x-text="hasil.rekomendasi"></p>
+
+                        <p class="text-sm text-zinc-400">
+                            <span x-text="hasil.gejala_id.length"></span> gejala terdeteksi dan sudah diisi "Ya". Kamu masih bisa mengubahnya di pertanyaan di bawah.
+                        </p>
+                        <p class="text-xs text-zinc-500">Ini perkiraan dari foto. Diagnosis resmi tetap dihitung dengan Certainty Factor setelah kamu menyelesaikan pertanyaan.</p>
+                    </div>
+                </template>
+            </div>
+
+            @foreach ($gejalas as $g)
+                <input type="hidden" name="jawaban[{{ $g->id }}]" :value="jawab[{{ $g->id }}] || 'tidak'">
+            @endforeach
+
+            {{-- Progres --}}
+            <div class="flex justify-between text-sm text-zinc-400 mb-2">
+                <span x-show="!selesai">Pertanyaan <span x-text="i + 1"></span> dari <span x-text="total"></span></span>
+                <span x-show="selesai" x-cloak>Tinjau jawaban</span>
+                <span x-text="Math.round((Math.min(i, total) / total) * 100) + '%'"></span>
+            </div>
+            <div class="h-2 bg-zinc-800 rounded-full mb-6">
+                <div class="h-2 bg-violet-500 rounded-full transition-all duration-300"
+                     :style="`width: ${(Math.min(i, total) / total) * 100}%`"></div>
+            </div>
+
+            {{-- Kartu pertanyaan --}}
+            @foreach ($gejalas as $idx => $g)
+                <div x-show="i === {{ $idx }}" {{ $idx > 0 ? 'x-cloak' : '' }}
+                     x-transition:enter="transition duration-200"
+                     x-transition:enter-start="opacity-0 translate-x-4"
+                     x-transition:enter-end="opacity-100 translate-x-0"
+                     class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                    <p class="text-xs text-zinc-500 mb-2">{{ $g->kode }}</p>
+                    <h2 class="text-lg font-semibold text-white mb-6">{{ $g->pertanyaan ?? $g->nama }}</h2>
+
+                    <div class="grid sm:grid-cols-3 gap-3">
+                        @foreach ([['ya', 'Ya', '1'], ['tidak', 'Tidak', '2'], ['tahu', 'Tidak tahu', '3']] as [$nilai, $label, $kunci])
+                            <button type="button" x-on:click="pilih('{{ $nilai }}')"
+                                    :class="jawab[{{ $g->id }}] === '{{ $nilai }}'
+                                        ? 'border-violet-500 bg-violet-500/15 text-white'
+                                        : 'border-zinc-800 text-zinc-300 hover:bg-zinc-800'"
+                                    class="border rounded-xl px-4 py-4 text-left transition">
+                                <span class="block font-medium">{{ $label }}</span>
+                                <span class="hidden sm:block text-xs text-zinc-500 mt-1">tekan {{ $kunci }}</span>
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+            @endforeach
+
+            {{-- Tinjau jawaban --}}
+            <div x-show="selesai" x-cloak
+                 x-transition:enter="transition duration-200"
+                 x-transition:enter-start="opacity-0 translate-x-4"
+                 x-transition:enter-end="opacity-100 translate-x-0"
+                 class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                <h2 class="text-lg font-semibold text-white mb-1">Semua pertanyaan sudah dijawab</h2>
+                <p class="text-sm text-zinc-400 mb-4">
+                    Gejala yang kamu jawab <span class="text-violet-300">Ya</span>
+                    (<span x-text="yaList.length"></span>):
+                </p>
+
+                <ul class="space-y-2 mb-4">
+                    <template x-for="id in yaList" :key="id">
+                        <li class="flex items-center gap-2 text-sm text-zinc-300">
+                            <span class="w-5 h-5 rounded-full bg-green-500/15 text-green-400 flex items-center justify-center text-xs">✓</span>
+                            <span x-text="nama[id]"></span>
+                        </li>
+                    </template>
+                </ul>
+
+                <p x-show="yaList.length === 0" class="text-sm text-yellow-400 bg-yellow-500/10 p-3 rounded-lg mb-4">
+                    Belum ada gejala yang dijawab "Ya". Kembali dan jawab minimal satu gejala.
+                </p>
+            </div>
+
+            {{-- Tombol --}}
+            <div class="flex justify-between mt-6">
+                <button type="button" x-on:click="mundur()" x-show="i > 0" x-cloak
+                        class="px-4 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800">← Sebelumnya</button>
+                <span x-show="i === 0"></span>
+
+                <button type="submit" x-show="selesai" x-cloak :disabled="yaList.length === 0"
+                        class="px-5 py-2 rounded-lg bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                    Lihat Hasil
+                </button>
+            </div>
+
+            <p class="text-xs text-zinc-600 mt-6 hidden sm:block">
+                Pintasan: 1 = Ya, 2 = Tidak, 3 = Tidak tahu, ← = kembali
+            </p>
+        </form>
+    @endif
+@endsection
+
+@push('scripts')
+<script>
+    function wizard(ids, nama) {
+        return {
+            i: 0,
+            ids: ids,
+            nama: nama,
+            jawab: {},
+            timer: null,
+            get total() { return this.ids.length; },
+            get selesai() { return this.i >= this.total; },
+            get yaList() { return this.ids.filter(id => this.jawab[id] === 'ya'); },
+            pilih(nilai) {
+                if (this.selesai) return;
+                this.jawab[this.ids[this.i]] = nilai;
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => { this.i++; }, 220);
+            },
+            mundur() {
+                if (this.i > 0) {
+                    clearTimeout(this.timer);
+                    this.i--;
+                }
+            },
+            tekan(e) {
+                if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+                if (e.key === '1') this.pilih('ya');
+                else if (e.key === '2') this.pilih('tidak');
+                else if (e.key === '3') this.pilih('tahu');
+                else if (e.key === 'ArrowLeft') this.mundur();
+            },
+        };
+    }
+</script>
+@endpush

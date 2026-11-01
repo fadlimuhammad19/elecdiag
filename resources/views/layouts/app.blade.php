@@ -1,0 +1,180 @@
+@php
+    $menu = [
+        ['Beranda',    'home',        route('dashboard'),      request()->routeIs('dashboard')],
+        ['Konsultasi', 'stethoscope', route('diagnosa.index'), request()->routeIs('diagnosa.*')],
+        ['Riwayat',    'history',     route('riwayat'),        request()->routeIs('riwayat')],
+        ['Profil',     'user',        route('profil'),         request()->routeIs('profil*')],
+    ];
+
+        $menuAdmin = [
+        ['Dashboard Admin', 'layout-dashboard', route('admin.dashboard'),         request()->routeIs('admin.dashboard')],
+        ['Riwayat Semua',   'clipboard-list',   route('admin.riwayat.index'),     request()->routeIs('admin.riwayat.*')],
+        ['Pengguna',        'users',            route('admin.pengguna.index'),    request()->routeIs('admin.pengguna.*')],
+        ['Kategori',        'folder',           route('admin.kategori.index'),    request()->routeIs('admin.kategori.*')],
+        ['Komponen',        'cpu',              route('admin.komponen.index'),    request()->routeIs('admin.komponen.*')],
+        ['Gejala',          'activity',         route('admin.gejala.index'),      request()->routeIs('admin.gejala.*')],
+        ['Kerusakan',       'wrench',           route('admin.kerusakan.index'),   request()->routeIs('admin.kerusakan.*')],
+        ['Aturan',          'list-checks',      route('admin.aturan.index'),      request()->routeIs('admin.aturan.*')],
+        ['Rekomendasi',     'lightbulb',        route('admin.rekomendasi.index'), request()->routeIs('admin.rekomendasi.*')],
+    ];
+
+    $semua = collect($menu)->map(fn ($m) => ['label' => $m[0], 'url' => $m[2], 'grup' => 'Menu']);
+
+    if (auth()->user()->role === 'admin') {
+        $semua = $semua->concat(
+            collect($menuAdmin)->map(fn ($m) => ['label' => $m[0], 'url' => $m[2], 'grup' => 'Admin'])
+        );
+    }
+
+    $semua = $semua->values();
+@endphp
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title', 'Beranda') - ElecDiag</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        body { color-scheme: dark; }
+        [x-cloak] { display: none !important; }
+        @keyframes masuk { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .animasi-masuk { animation: masuk .35s ease both; }
+    </style>
+    <script>
+        function aplikasi(items) {
+            return {
+                menuOpen: false,
+                palette: false,
+                q: '',
+                items: items,
+                get hasil() {
+                    const k = this.q.toLowerCase();
+                    return this.items.filter(i => i.label.toLowerCase().includes(k));
+                },
+                buka() {
+                    this.palette = true;
+                    this.q = '';
+                    this.$nextTick(() => this.$refs.cari.focus());
+                },
+                pergi() {
+                    if (this.hasil.length) window.location = this.hasil[0].url;
+                },
+            };
+        }
+    </script>
+</head>
+<body class="bg-zinc-950 text-zinc-200 antialiased"
+      x-data="aplikasi(@js($semua))"
+      x-on:keydown.window.ctrl.k.prevent="buka()"
+      x-on:keydown.window.meta.k.prevent="buka()"
+      x-on:keydown.escape.window="palette = false; menuOpen = false">
+
+<div class="flex gap-3 p-3 min-h-screen">
+
+    {{-- Overlay menu di HP --}}
+    <div x-show="menuOpen" x-cloak x-on:click="menuOpen = false"
+         class="fixed inset-0 z-30 bg-black/60 lg:hidden print:hidden"></div>
+
+    {{-- Sidebar --}}
+    <aside class="fixed left-3 top-3 z-40 h-[calc(100vh-1.5rem)] w-60 shrink-0 bg-zinc-900 lg:bg-zinc-900/60
+                  border border-zinc-800 rounded-2xl p-3 flex flex-col lg:sticky transition-transform duration-300 print:hidden"
+           :class="menuOpen ? 'translate-x-0' : '-translate-x-[120%] lg:translate-x-0'">
+        <div class="flex items-center gap-2 px-3 py-3 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-violet-500 flex items-center justify-center">
+                <i data-lucide="cpu" class="w-4 h-4 text-white"></i>
+            </div>
+            <span class="font-semibold text-white text-lg">ElecDiag</span>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto space-y-1">
+            @foreach ($menu as [$label, $icon, $url, $aktif])
+                <a href="{{ $url }}"
+                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition
+                          {{ $aktif ? 'bg-violet-500 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white' }}">
+                    <i data-lucide="{{ $icon }}" class="w-4 h-4"></i> {{ $label }}
+                </a>
+            @endforeach
+
+            @if (auth()->user()->role === 'admin')
+                <p class="px-3 pt-5 pb-1 text-xs uppercase tracking-wider text-zinc-500">Admin</p>
+                @foreach ($menuAdmin as [$label, $icon, $url, $aktif])
+                    <a href="{{ $url }}"
+                       class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition
+                              {{ $aktif ? 'bg-violet-500 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white' }}">
+                        <i data-lucide="{{ $icon }}" class="w-4 h-4"></i> {{ $label }}
+                    </a>
+                @endforeach
+            @endif
+        </nav>
+
+        <form action="{{ route('logout') }}" method="POST" class="pt-3 border-t border-zinc-800">
+            @csrf
+            <button class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white">
+                <i data-lucide="log-out" class="w-4 h-4"></i> Logout
+            </button>
+        </form>
+    </aside>
+
+    {{-- Konten --}}
+    <div class="flex-1 min-w-0">
+        <header class="flex items-center justify-between gap-3 px-2 py-3 print:hidden">
+            <div class="flex items-center gap-3 min-w-0">
+                <button type="button" x-on:click="menuOpen = true"
+                        class="lg:hidden w-9 h-9 shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 flex items-center justify-center">
+                    <i data-lucide="menu" class="w-4 h-4"></i>
+                </button>
+                <h1 class="text-xl sm:text-2xl font-semibold text-white truncate">@yield('title', 'Beranda')</h1>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="button" x-on:click="buka()"
+                        class="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                    <span>Cari...</span>
+                    <kbd class="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">Ctrl K</kbd>
+                </button>
+
+                <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60">
+                    <div class="w-7 h-7 rounded-full bg-violet-500 flex items-center justify-center text-xs font-semibold text-white">
+                        {{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}
+                    </div>
+                    <span class="hidden sm:block text-sm text-zinc-300">{{ auth()->user()->name ?? '' }}</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="animasi-masuk px-2 pb-6">
+            @yield('content')
+        </main>
+    </div>
+</div>
+
+{{-- Command palette (Ctrl+K) --}}
+<div x-show="palette" x-cloak
+     class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-24 print:hidden"
+     x-on:click.self="palette = false">
+    <div class="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+        <input type="text" x-ref="cari" x-model="q" x-on:keydown.enter.prevent="pergi()"
+               placeholder="Cari halaman..."
+               class="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white outline-none focus:border-violet-500">
+        <div class="mt-2 max-h-64 overflow-y-auto">
+            <template x-for="i in hasil" :key="i.url">
+                <a :href="i.url" class="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                    <span x-text="i.label"></span>
+                    <span class="text-xs text-zinc-500" x-text="i.grup"></span>
+                </a>
+            </template>
+            <p x-show="hasil.length === 0" class="px-3 py-2 text-sm text-zinc-500">Tidak ditemukan.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => lucide.createIcons());
+</script>
+    @stack('scripts')
+</body>
+</html>
